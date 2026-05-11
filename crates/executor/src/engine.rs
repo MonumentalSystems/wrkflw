@@ -1988,7 +1988,21 @@ async fn execute_job(ctx: JobExecutionContext<'_>) -> Result<JobResult, Executio
                     step_idx: idx,
                     job_env: &job_env,
                     job_user_env: &job_user_env,
-                    working_dir: job_dir.path(),
+                    // MonumentalSystems patch: use the directory wrkflw was
+                    // invoked from (the actual workspace) as the bind source
+                    // for /github/workspace, NOT a fresh empty tempdir. The
+                    // tempdir behaviour bind-mounts an empty directory at
+                    // /github/workspace, so any cargo / make / etc. step
+                    // running in docker mode immediately fails with "could
+                    // not find Cargo.toml in /github/workspace or any parent
+                    // directory" because the workspace bytes were never
+                    // mounted in. Using current_dir matches what GitHub
+                    // Actions does (the runner clones the repo into
+                    // workspace = $GITHUB_WORKSPACE = the cwd of the
+                    // job's first step). job_dir is still used for
+                    // /github/workflow ephemeral state via
+                    // prepare_step_container_context.
+                    working_dir: &current_dir,
                     runtime: ctx.runtime,
                     workflow: ctx.workflow,
                     runner_image: &runner_image_value,
@@ -2268,7 +2282,12 @@ async fn execute_matrix_job(
                         step_idx: idx,
                         job_env: &job_env,
                         job_user_env: &job_user_env,
-                        working_dir: job_dir.path(),
+                        // MonumentalSystems patch: use the directory wrkflw was
+                        // invoked from (the actual workspace) as the bind source
+                        // for /github/workspace, NOT a fresh empty tempdir. See
+                        // the matching comment in execute_job above for the
+                        // full rationale.
+                        working_dir: &current_dir,
                         runtime,
                         workflow,
                         runner_image: &runner_image_value,
