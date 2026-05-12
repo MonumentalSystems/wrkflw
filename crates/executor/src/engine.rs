@@ -1951,11 +1951,23 @@ async fn execute_job(ctx: JobExecutionContext<'_>) -> Result<JobResult, Executio
     let job_dir = tempfile::tempdir()
         .map_err(|e| ExecutionError::Execution(format!("Failed to create job directory: {}", e)))?;
 
-    // Get the current project directory
-    let current_dir = std::env::current_dir().map_err(|e| {
-        ExecutionError::Execution(format!("Failed to get current directory: {}", e))
-    })?;
-
+    // Get the current project directory. Prefer GITHUB_WORKSPACE env var
+    // when set by the caller (the gnostr-cloud ci-runner agent does), so the
+    // workspace bind is independent of the wrkflw process cwd (which has
+    // proven unreliable under tokio::process spawn with `.current_dir()`).
+    let current_dir = if let Ok(ws) = std::env::var("GITHUB_WORKSPACE") {
+        if !ws.is_empty() {
+            std::path::PathBuf::from(ws)
+        } else {
+            std::env::current_dir().map_err(|e| {
+                ExecutionError::Execution(format!("Failed to get current directory: {}", e))
+            })?
+        }
+    } else {
+        std::env::current_dir().map_err(|e| {
+            ExecutionError::Execution(format!("Failed to get current directory: {}", e))
+        })?
+    };
     wrkflw_logging::info(&format!("Executing job: {}", ctx.job_name));
 
     let mut job_success = true;
@@ -2247,10 +2259,21 @@ async fn execute_matrix_job(
     let job_dir = tempfile::tempdir()
         .map_err(|e| ExecutionError::Execution(format!("Failed to create job directory: {}", e)))?;
 
-    // Get the current project directory
-    let current_dir = std::env::current_dir().map_err(|e| {
-        ExecutionError::Execution(format!("Failed to get current directory: {}", e))
-    })?;
+    // Get the current project directory. Same GITHUB_WORKSPACE-preferring
+    // logic as execute_job above.
+    let current_dir = if let Ok(ws) = std::env::var("GITHUB_WORKSPACE") {
+        if !ws.is_empty() {
+            std::path::PathBuf::from(ws)
+        } else {
+            std::env::current_dir().map_err(|e| {
+                ExecutionError::Execution(format!("Failed to get current directory: {}", e))
+            })?
+        }
+    } else {
+        std::env::current_dir().map_err(|e| {
+            ExecutionError::Execution(format!("Failed to get current directory: {}", e))
+        })?
+    };
 
     let mut loop_state = StepLoopState::new();
     let pending_cache_saves = std::sync::Mutex::new(Vec::<PendingCacheSave>::new());
