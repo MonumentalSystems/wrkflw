@@ -659,8 +659,12 @@ impl ContainerRuntime for DockerRuntime {
         // Print detailed debugging info
         wrkflw_logging::info(&format!("Docker: Running container with image: {}", image));
 
-        // Add a global timeout for all Docker operations to prevent freezing
-        let timeout_duration = std::time::Duration::from_secs(360); // Increased outer timeout to 6 minutes
+        // Global timeout for the whole container operation so a wedged docker op
+        // can't hang the runner. Honors WRKFLW_CONTAINER_WAIT_SECS (the same knob
+        // as the container-wait below; default 900s) instead of the original
+        // hardcoded 360s — large instrumented coverage builds run well past 6
+        // minutes, and the agent injects a generous value per job.
+        let timeout_duration = container_wait_timeout();
 
         // Run the entire container operation with a timeout
         match tokio::time::timeout(
@@ -671,7 +675,10 @@ impl ContainerRuntime for DockerRuntime {
         {
             Ok(result) => result,
             Err(_) => {
-                wrkflw_logging::error("Docker operation timed out after 360 seconds");
+                wrkflw_logging::error(&format!(
+                    "Docker operation timed out after {} seconds",
+                    timeout_duration.as_secs()
+                ));
                 Err(ContainerError::ContainerExecution(
                     "Operation timed out".to_string(),
                 ))
