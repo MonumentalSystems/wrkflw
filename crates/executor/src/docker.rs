@@ -933,13 +933,28 @@ impl DockerRuntime {
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
 
+        // The daemon's host-side docker socket, for rootless setups
+        // where it is NOT /var/run/docker.sock (e.g. a rootless daemon's
+        // /run/user/<uid>/docker.sock). Set by the gnostr-cloud runner.
+        let host_docker_sock = std::env::var("WRKFLW_HOST_DOCKER_SOCK")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
         let mut binds = Vec::new();
         for (host_path, container_path) in volumes {
-            binds.push(format!(
-                "{}:{}",
-                host_path.to_string_lossy(),
-                container_path.to_string_lossy()
-            ));
+            // A step that bind-mounts /var/run/docker.sock wants to talk
+            // to THE daemon. The step is created on the daemon, which
+            // resolves the source path in its own namespace — under a
+            // rootless daemon /var/run/docker.sock there is the system
+            // root socket (wrong, and inaccessible), so rewrite the
+            // source to the daemon's actual rootless socket.
+            let host_str = host_path.to_string_lossy();
+            let src = match (&host_docker_sock, host_str.as_ref()) {
+                (Some(sock), "/var/run/docker.sock") => sock.clone(),
+                _ => host_str.to_string(),
+            };
+            binds.push(format!("{}:{}", src, container_path.to_string_lossy()));
         }
 
         // Convert command vector to Vec<String>
