@@ -35,6 +35,22 @@ fn container_wait_timeout() -> std::time::Duration {
         .unwrap_or(900);
     std::time::Duration::from_secs(secs)
 }
+
+/// Optional OCI runtime for STEP containers, from `WRKFLW_CONTAINER_RUNTIME`.
+///
+/// When unset, returns `None` so bollard omits `HostConfig.runtime` and the
+/// daemon uses its configured default (`runc`) — i.e. behaviour is unchanged.
+/// Set it to a runtime registered in the daemon's `daemon.json`
+/// (e.g. `runsc` for gVisor or `kata-runtime` for Kata Containers) to run
+/// every workflow step under a real sandbox — kernel-syscall isolation
+/// (gVisor) or a microVM (Kata) — so untrusted/supply-chain build code in a
+/// step cannot reach the host kernel. Empty / whitespace is treated as unset.
+fn container_runtime() -> Option<String> {
+    std::env::var("WRKFLW_CONTAINER_RUNTIME")
+        .ok()
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty())
+}
 // Map to track customized images for a job
 #[allow(dead_code)]
 static CUSTOMIZED_IMAGES: Lazy<Mutex<HashMap<String, String>>> =
@@ -972,6 +988,10 @@ impl DockerRuntime {
         } else {
             HostConfig {
                 binds: Some(binds),
+                // Optional sandbox runtime (gVisor `runsc` / Kata) for step
+                // containers — see `container_runtime()`. `None` keeps the
+                // daemon default (runc), so this is backward-compatible.
+                runtime: container_runtime(),
                 ..Default::default()
             }
         };
